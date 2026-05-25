@@ -17,6 +17,8 @@ jobs:
     steps:
 
       - uses: actions/checkout@v4
+        with:
+            fetch-depth: 0
 
       - id: matrix
         run: |
@@ -35,3 +37,7 @@ jobs:
             | jq -cs '{service: .}')
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+      - name: Print matrix
+        run: |
+         echo '${{ steps.matrix.outputs.matrix }}'
