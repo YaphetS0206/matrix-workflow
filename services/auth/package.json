@@ -1,0 +1,13 @@
+{
+  "name": "auth-service",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "jest --coverage",
+    "lint": "eslint .",
+    "build": "echo Building auth..."
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "jest": "^29.0.0"
+  }
+}

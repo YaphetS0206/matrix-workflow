@@ -1,0 +1,33 @@
+name: Platform CI
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  discover:
+    uses: ./.github/workflows/discover-services.yml
+
+  build:
+    needs: discover
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      matrix: ${{ needs.discover.outputs.matrix }}
+
+  security:
+    needs: build
+    uses: ./.github/workflows/reusable-security.yml
+    with:
+      matrix: ${{ needs.discover.outputs.matrix }}
+
+  deploy:
+    needs: security
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      matrix: ${{ needs.discover.outputs.matrix }}

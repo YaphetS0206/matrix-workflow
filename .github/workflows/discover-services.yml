@@ -1,0 +1,37 @@
+name: Discover Services
+
+on:
+  workflow_call:
+    outputs:
+      matrix:
+        value: ${{ jobs.detect.outputs.matrix }}
+
+jobs:
+
+  detect:
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - id: matrix
+        run: |
+
+          SERVICES=$(git diff --name-only HEAD~1 HEAD \
+            | grep '^services/' \
+            | cut -d '/' -f2 \
+            | sort -u)
+
+          if [ -z "$SERVICES" ]; then
+            SERVICES="auth"
+          fi
+
+          MATRIX=$(printf '%s\n' "$SERVICES" \
+            | jq -R . \
+            | jq -cs '{service: .}')
+
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT

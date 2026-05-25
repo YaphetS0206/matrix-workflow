@@ -1,0 +1,28 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        required: true
+        type: string
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service: ${{ fromJson(inputs.matrix).service }}
+        environment: [dev, staging]
+
+    environment:
+      name: ${{ matrix.environment }}
+
+    steps:
+
+      - name: Deploy simulation
+        run: |
+          echo "Deploying ${{ matrix.service }} to ${{ matrix.environment }}"
