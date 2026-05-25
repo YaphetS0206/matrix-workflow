@@ -15,29 +15,78 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
-
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
             fetch-depth: 0
 
-      - id: matrix
+     # 🧠 Detectar servicios modificados
+
+      - name: Detect changed services
+
+        id: changes
+
         run: |
+
+          echo "Detecting changes..."
 
           SERVICES=$(git diff --name-only HEAD~1 HEAD \
             | grep '^services/' \
             | cut -d '/' -f2 \
-            | sort -u)
+            | sort -u || true)
 
-          if [ -z "$SERVICES" ]; then
-            SERVICES="auth"
+          echo "Changed services:"
+
+          echo "$SERVICES"
+
+          echo "services<<EOF" >> $GITHUB_OUTPUT
+
+          echo "$SERVICES" >> $GITHUB_OUTPUT
+
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # 🧠 Construir matrix final
+
+      - name: Build matrix
+
+        id: set-matrix
+
+        run: |
+
+          if [ -z "${{ steps.changes.outputs.services }}" ]; then
+
+            echo "No changes detected → running all services"
+
+            SERVICES=$(find services -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+
+          else
+
+            SERVICES="${{ steps.changes.outputs.services }}"
+
           fi
 
+          echo "Final services:"
+
+          echo "$SERVICES"
+
           MATRIX=$(printf '%s\n' "$SERVICES" \
+
             | jq -R . \
+
             | jq -cs '{service: .}')
+
+          echo "Generated matrix:"
+
+          echo "$MATRIX"
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
+      # 🔍 Debug visual (IMPORTANTE para demo)
+
       - name: Print matrix
+
         run: |
-         echo '${{ steps.matrix.outputs.matrix }}'
+
+          echo "FINAL MATRIX:"
+
+          echo '${{ steps.set-matrix.outputs.matrix }}'
