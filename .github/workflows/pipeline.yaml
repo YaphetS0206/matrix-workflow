@@ -1,0 +1,146 @@
+name: Matrix DevSecOps Demo
+
+on:
+  push:
+    branches:
+      - demo-1
+
+jobs:
+
+  # =========================================
+  # 🔐 SECURITY MATRIX
+  # =========================================
+
+  security:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        security-tool:
+          - trivy
+          - gitleaks
+          - semgrep
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      # 🔐 Trivy
+      - name: Run Trivy
+        if: matrix.security-tool == 'trivy'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+
+      # 🔐 Gitleaks
+      - name: Run Gitleaks
+        if: matrix.security-tool == 'gitleaks'
+        uses: gitleaks/gitleaks-action@v2
+
+      # 🔐 Semgrep
+      - name: Run Semgrep
+        if: matrix.security-tool == 'semgrep'
+        run: |
+          docker run --rm \
+            -v "$(pwd):/src" \
+            semgrep/semgrep \
+            semgrep scan /src
+
+  # =========================================
+  # 🧪 TEST MATRIX
+  # =========================================
+
+  testing:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        test-type:
+          - unit
+          - integration
+          - smoke
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Run tests
+        run: |
+          npm run test:${{ matrix.test-type }}
+
+  # =========================================
+  # 🌍 ENVIRONMENT MATRIX
+  # =========================================
+
+  environment-validation:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        environment:
+          - dev
+          - staging
+          - prod
+
+    steps:
+
+      - name: Validate environment
+        run: |
+
+          echo "Running validation for:"
+          echo "${{ matrix.environment }}"
+
+          if [ "${{ matrix.environment }}" = "prod" ]; then
+            echo "Running production-grade checks..."
+          fi
+
+  # =========================================
+  # 🚀 MULTI-DIMENSION MATRIX
+  # =========================================
+
+  distributed-validation:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+
+        security-tool:
+          - trivy
+          - gitleaks
+
+        test-type:
+          - unit
+          - smoke
+
+        environment:
+          - dev
+          - staging
+
+    steps:
+
+      - name: Print execution context
+        run: |
+
+          echo "Security Tool: ${{ matrix.security-tool }}"
+          echo "Test Type: ${{ matrix.test-type }}"
+          echo "Environment: ${{ matrix.environment }}"
