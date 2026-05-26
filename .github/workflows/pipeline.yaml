@@ -95,8 +95,11 @@ jobs:
       matrix:
         environment:
           - dev
-          - staging
+          - qa
           - prod
+       
+    environment:
+        name: ${{ matrix.environment }}
 
     steps:
 
@@ -109,6 +112,13 @@ jobs:
           if [ "${{ matrix.environment }}" = "prod" ]; then
             echo "Running production-grade checks..."
           fi
+
+      - name: Print execution context
+
+        run: |
+            echo "Security Tool: ${{ matrix.security-tool }}"
+            echo "Test Type: ${{ matrix.test-type }}"
+            echo "Environment: ${{ matrix.environment }}"
 
   # =========================================
   # 🚀 MULTI-DIMENSION MATRIX
