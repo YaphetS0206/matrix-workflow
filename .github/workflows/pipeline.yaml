@@ -101,7 +101,7 @@ jobs:
     environment:
         name: ${{ matrix.environment }}
 
-    steps:
+    steps:  
 
       - name: Validate environment
         run: |
@@ -119,6 +119,15 @@ jobs:
             echo "Security Tool: ${{ matrix.security-tool }}"
             echo "Test Type: ${{ matrix.test-type }}"
             echo "Environment: ${{ matrix.environment }}"
+
+      - name: Print environment info
+
+        run: |
+            echo "Environment:"
+            echo "${{ matrix.environment }}"
+            echo "API URL:"
+            echo "${{ secrets.API_URL }}"
+        
 
   # =========================================
   # 🚀 MULTI-DIMENSION MATRIX
