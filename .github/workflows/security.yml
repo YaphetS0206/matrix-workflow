@@ -1,0 +1,43 @@
+name: Security Validation
+
+on:
+  workflow_call:
+
+jobs:
+
+  security-scan:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+        security-tool:
+          - gitleaks
+          - trivy
+          - semgrep
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        if: matrix.security-tool == 'gitleaks'
+        uses: gitleaks/gitleaks-action@v2
+
+      - name: Run Trivy
+        if: matrix.security-tool == 'trivy'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+
+      - name: Run Semgrep
+        if: matrix.security-tool == 'semgrep'
+        run: |
+          docker run --rm \
+            -v "$(pwd):/src" \
+            semgrep/semgrep \
+            semgrep scan /src

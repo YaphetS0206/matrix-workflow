@@ -1,0 +1,33 @@
+name: Testing Validation
+
+on:
+  workflow_call:
+
+jobs:
+
+  testing:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+        test-type:
+          - unit
+          - integration
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Run tests
+        run: |
+          npm run test:${{ matrix.test-type }}

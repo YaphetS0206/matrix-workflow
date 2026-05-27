@@ -1,0 +1,36 @@
+name: Build Artifact
+
+on:
+  workflow_call:
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment:
+          - dev
+          - qa
+          - prod
+
+    environment:
+      name: ${{ matrix.environment }}
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t demo-api:${{ github.sha }} .
+
+      - name: Simulate push
+        run: |
+          echo "Pushing artifact to registry..."
+
+      - name: Print environment secret
+        run: |
+          echo "${{ secrets.API_URL }}"

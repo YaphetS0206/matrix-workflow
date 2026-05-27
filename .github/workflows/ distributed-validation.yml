@@ -1,0 +1,24 @@
+name: Distributed Validation Layer
+
+on:
+  workflow_call:
+
+jobs:
+
+  security:
+    uses: ./.github/workflows/security.yml
+
+  testing:
+    uses: ./.github/workflows/testing.yml
+
+  quality:
+    uses: ./.github/workflows/quality.yml
+
+  build:
+
+    needs:
+      - security
+      - testing
+      - quality
+
+    uses: ./.github/workflows/build.yml
