@@ -13,7 +13,7 @@ jobs:
 
       matrix:
         quality-check:
-          - lint
+          - semgrep
           - audit
 
     steps:
@@ -26,9 +26,10 @@ jobs:
 
       - run: npm install
 
-      - name: ESLint
-        if: matrix.quality-check == 'lint'
-        run: npm run lint
+      - name: Semgrep SAST
+        if: matrix.quality-check == 'semgrep'
+        run: |
+            docker run --rm -v "$(pwd):/src" semgrep/semgrep scan /src
 
       - name: npm audit
         if: matrix.quality-check == 'audit'
