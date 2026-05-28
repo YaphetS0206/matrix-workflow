@@ -26,12 +26,13 @@ jobs:
 
       - run: npm install
 
+      # 🔐 Semgrep
       - name: Semgrep Scan
         if: matrix.quality-check == 'semgrep'
         uses: returntocorp/semgrep-action@v1
         with:
-         config: p/owasp-top-ten
-
+          config: p/owasp-top-ten
+          
       - name: npm audit
         if: matrix.quality-check == 'audit'
         run: npm audit --audit-level=high

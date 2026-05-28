@@ -34,10 +34,9 @@ jobs:
           scan-type: fs
           scan-ref: .
 
-      - name: Run Semgrep
-        if: matrix.security-tool == 'semgrep'
-        run: |
-          docker run --rm \
-            -v "$(pwd):/src" \
-            semgrep/semgrep \
-            semgrep scan /src
+      # 🔐 Semgrep
+      - name: Semgrep Scan
+        if: matrix.quality-check == 'semgrep'
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
