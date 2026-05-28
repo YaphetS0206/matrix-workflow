@@ -29,7 +29,10 @@ jobs:
       - name: Semgrep SAST
         if: matrix.quality-check == 'semgrep'
         run: |
-            docker run --rm -v "$(pwd):/src" semgrep scan /src
+            docker run --rm \
+            -v "$(pwd):/src" \
+            semgrep/semgrep \
+            semgrep scan /src
 
       - name: npm audit
         if: matrix.quality-check == 'audit'
