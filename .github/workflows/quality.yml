@@ -26,13 +26,11 @@ jobs:
 
       - run: npm install
 
-      - name: Semgrep SAST
+      - name: Semgrep Scan
         if: matrix.quality-check == 'semgrep'
-        run: |
-            docker run --rm \
-            -v "$(pwd):/src" \
-            semgrep/semgrep \
-            semgrep scan /src
+        uses: returntocorp/semgrep-action@v1
+        with:
+         config: p/owasp-top-ten
 
       - name: npm audit
         if: matrix.quality-check == 'audit'
