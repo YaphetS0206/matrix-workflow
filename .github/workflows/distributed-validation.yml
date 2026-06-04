@@ -22,6 +22,11 @@ on:
         type: boolean
         default: true
 
+# Permisos necesarios para subir SARIF a la pestaña Security
+permissions:
+  contents: read
+  security-events: write   # ← CLAVE para upload-sarif
+
 jobs:
   # 1. Matrix de pruebas
   test-matrix:
@@ -103,13 +108,17 @@ jobs:
     if: inputs.run-semgrep
     name: 🔍 Semgrep SAST
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - uses: returntocorp/semgrep-action@v1
         with:
           config: auto
           output: semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
 
