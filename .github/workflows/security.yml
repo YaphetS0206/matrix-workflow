@@ -46,7 +46,7 @@ jobs:
           fi
           echo "high_critical=$HIGH" >> $GITHUB_OUTPUT
           echo "Found $HIGH high/critical vulnerabilities"
-      - name: Quality Gate - Enforce max high/critical
+      - name: Quality Gate - max high/critical
         run: |
           HIGH=${{ steps.parse.outputs.high_critical }}
           MAX=${{ inputs.max-high-vulns }}
