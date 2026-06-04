@@ -8,10 +8,6 @@ on:
       min-coverage:
         type: number
         default: 80
-    outputs:
-      coverage-files:
-        description: "Artefactos de cobertura generados"
-        value: ${{ jobs.test.outputs.coverage-files }}
 
 jobs:
   test:
@@ -33,10 +29,10 @@ jobs:
           pip install pytest pytest-cov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Run tests with coverage
-        run: pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
+        run: PYTHONPATH=. pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
       - name: Upload .coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
-        if: always()   # ← crucial para no saltar este paso aunque fallen los tests
         with:
           name: coverage-data-${{ matrix.python-version }}
           path: .coverage
