@@ -118,6 +118,7 @@ jobs:
           config: auto
           output: semgrep.sarif
       - name: Upload SARIF to GitHub Security tab
+        if: success() && hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
