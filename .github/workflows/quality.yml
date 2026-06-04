@@ -1,0 +1,40 @@
+name: ✨ Reusable - Code Quality
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: '.'
+      node-version:
+        type: string
+        default: '20'
+
+jobs:
+  lint:
+    name: 🧹 ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+      - run: npm run lint --if-present
+        working-directory: ${{ inputs.working-directory }}
+
+  prettier:
+    name: 💄 Prettier check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+      - run: npm run format:check --if-present
+        working-directory: ${{ inputs.working-directory }}

@@ -1,0 +1,45 @@
+name: 🔒 Reusable - Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: '.'
+    secrets:
+      SNYK_TOKEN:
+        required: false
+
+jobs:
+  audit:
+    name: 📋 npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+      - run: npm audit --audit-level=moderate
+        working-directory: ${{ inputs.working-directory }}
+
+  snyk:
+    name: 🛡️ Snyk scan
+    if: secrets.SNYK_TOKEN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+      - name: Run Snyk
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+          command: test
+          working-directory: ${{ inputs.working-directory }}
