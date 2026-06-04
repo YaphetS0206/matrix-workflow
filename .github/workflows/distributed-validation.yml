@@ -1,152 +1,150 @@
-name: 🌐 Security & Quality Distributed Validation
+name: 🐍 Distributed Security & Quality for Python (Open Source)
 
 on:
   workflow_call:
     inputs:
-      node-versions:
-        description: 'Versiones de Node.js para la matriz de pruebas'
+      python-versions:
         type: string
-        default: '[18, 20, 22]'
+        default: '[3.9, 3.10, 3.11, 3.12]'
       min-coverage:
-        description: 'Cobertura mínima requerida (0-100)'
         type: number
         default: 80
       max-high-vulns:
-        description: 'Máximo de vulnerabilidades high+critical permitidas'
         type: number
         default: 0
       run-semgrep:
-        description: 'Ejecutar análisis Semgrep'
         type: boolean
         default: true
-    secrets:
-      SNYK_TOKEN:  # opcional, por si quieres añadir Snyk más adelante
-        required: false
+      run-bandit:
+        type: boolean
+        default: true
+      run-trivy:
+        type: boolean
+        default: true
 
 jobs:
-  # ============================================================
-  # 1. MATRIX DE PRUEBAS (diferentes versiones de Node)
-  # ============================================================
+  # 1. Matrix de pruebas
   test-matrix:
-    name: 🧪 Test Node ${{ matrix.node }}
+    name: 🧪 Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ${{ fromJson(inputs.node-versions) }}
+        python-version: ${{ fromJson(inputs.python-versions) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: ${{ matrix.node }}
-          cache: 'npm'
-      - run: npm ci
-      - name: Ejecutar tests con cobertura
-        run: npm test -- --coverage --watchAll=false
-      - name: Subir artefacto de cobertura por versión
-        uses: actions/upload-artifact@v4
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Run tests with coverage
+        run: pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
+      - uses: actions/upload-artifact@v4
         with:
-          name: coverage-node-${{ matrix.node }}
-          path: coverage/
+          name: coverage-python-${{ matrix.python-version }}
+          path: coverage.xml
 
-  # ============================================================
-  # 2. QUALITY GATE: COBERTURA GLOBAL (fusión de todas las versiones)
-  # ============================================================
+  # 2. Quality gate: cobertura fusionada
   quality-coverage:
-    name: 📊 Quality Gate - Cobertura mínima ${{ inputs.min-coverage }}%
+    name: 📊 Coverage gate (≥${{ inputs.min-coverage }}%)
     runs-on: ubuntu-latest
     needs: test-matrix
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Descargar todos los reports de cobertura
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: coverage-*
           path: all-coverage
           merge-multiple: true
-      - name: Instalar nyc para fusionar
-        run: npm install -g nyc
-      - name: Fusionar coberturas
-        run: npx nyc merge all-coverage .nyc_output
-      - name: Generar reporte JSON
-        run: npx nyc report --reporter=json-summary
-      - name: Verificar umbral de cobertura
+      - run: pip install coverage
+      - run: coverage combine all-coverage/
+      - name: Check threshold
         run: |
-          COVERAGE=$(jq '.total.lines.pct' coverage/coverage-summary.json)
-          echo "Cobertura total: $COVERAGE%"
+          COVERAGE=$(coverage report | tail -1 | awk '{print $NF}' | sed 's/%//')
           if (( $(echo "$COVERAGE < ${{ inputs.min-coverage }}" | bc -l) )); then
-            echo "❌ Falló quality gate: cobertura $COVERAGE% es inferior a ${{ inputs.min-coverage }}%"
+            echo "❌ Cobertura $COVERAGE% < ${{ inputs.min-coverage }}%"
             exit 1
-          else
-            echo "✅ Quality gate de cobertura superado"
           fi
+          echo "✅ Cobertura $COVERAGE%"
 
-  # ============================================================
-  # 3. QUALITY GATE: npm audit (vulnerabilidades high/critical)
-  # ============================================================
+  # 3. pip-audit (sin token, usa base pública PyPI)
   audit-gate:
-    name: 🔒 npm audit - Máx ${{ inputs.max-high-vulns }} vulnerabilidades high+critical
+    name: 🔒 pip-audit (vulns en dependencias)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 20
-      - run: npm ci
-      - name: Ejecutar npm audit y extraer métricas
+          python-version: 3.11
+      - run: pip install pip-audit
+      - name: Run pip-audit
         id: audit
         continue-on-error: true
         run: |
-          npm audit --json > audit.json
-          HIGH=$(jq '.metadata.vulnerabilities.high // 0' audit.json)
-          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit.json)
-          echo "high=$HIGH" >> $GITHUB_OUTPUT
-          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
-      - name: Verificar límite de vulnerabilidades
+          pip-audit --requirement requirements.txt --format json --output audit.json
+          HIGH=$(jq '[.vulnerabilities[] | select(.severity == "High" or .severity == "Critical")] | length' audit.json)
+          echo "high_critical=$HIGH" >> $GITHUB_OUTPUT
+      - name: Validate
         run: |
-          HIGH=${{ steps.audit.outputs.high }}
-          CRITICAL=${{ steps.audit.outputs.critical }}
-          TOTAL=$((HIGH + CRITICAL))
-          echo "Vulnerabilidades high: $HIGH, critical: $CRITICAL, total: $TOTAL"
-          if [ $TOTAL -gt ${{ inputs.max-high-vulns }} ]; then
-            echo "❌ Falló quality gate: se encontraron $TOTAL vulnerabilidades high/critical (máximo ${{ inputs.max-high-vulns }})"
+          HIGH=${{ steps.audit.outputs.high_critical }}
+          if [ $HIGH -gt ${{ inputs.max-high-vulns }} ]; then
+            echo "❌ $HIGH high/critical vulnerabilities"
             exit 1
-          else
-            echo "✅ Quality gate de vulnerabilidades superado"
           fi
-      - name: Subir reporte de auditoría
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-audit-report
-          path: audit.json
+          echo "✅ No high/critical vulnerabilities"
 
-  # ============================================================
-  # 4. SEMGREP - SAST moderno
-  # ============================================================
+  # 4. Semgrep (SAST multi-lenguaje)
   semgrep:
-    name: 🔍 Semgrep SAST
     if: inputs.run-semgrep
+    name: 🔍 Semgrep SAST
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ejecutar Semgrep
-        id: semgrep
-        continue-on-error: true
-        uses: returntocorp/semgrep-action@v1
+      - uses: returntocorp/semgrep-action@v1
         with:
-          config: auto               # usa reglas predeterminadas (p/default, p/security-audit, etc.)
+          config: auto
           output: semgrep.sarif
-      - name: Subir resultados a la pestaña de seguridad de GitHub
-        uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
-      - name: (Opcional) Fallar si se encuentran hallazgos críticos
-        run: |
-          # Ejemplo: si quieres fallar el pipeline cuando Semgrep encuentra errores de seguridad nivel error
-          # Se puede personalizar según tu criterio
-          echo "✅ Escaneo Semgrep completado. Revisa la pestaña 'Security' para más detalles."
 
- 
+  # 5. Bandit (Python específico)
+  bandit:
+    if: inputs.run-bandit
+    name: 🛡️ Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+      - run: pip install bandit
+      - run: bandit -r src -f json -o bandit.json
+      - name: Check high severity
+        run: |
+          HIGH=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit.json)
+          if [ $HIGH -gt 0 ]; then exit 1; fi
+
+  # 6. Trivy (escáner de vulnerabilidades en dependencias y contenedores)
+  trivy:
+    if: inputs.run-trivy
+    name: 🐳 Trivy filesystem scan (sin token)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
