@@ -32,12 +32,18 @@ jobs:
       - name: Parse vulnerabilities
         id: parse
         run: |
-          if [ ! -f audit.json ]; then
-            echo "No audit.json generated. Assuming no vulnerabilities or error."
+          if [ ! -f audit.json ] || [ ! -s audit.json ]; then
+            echo "audit.json missing or empty. Assuming no vulnerabilities."
             echo "high_critical=0" >> $GITHUB_OUTPUT
             exit 0
           fi
-          HIGH=$(jq '[.vulnerabilities[] | select(.severity == "High" or .severity == "Critical")] | length' audit.json)
+          # Verificar que el JSON tiene la estructura esperada
+          if jq -e '.vulnerabilities' audit.json > /dev/null 2>&1; then
+            HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "High" or .severity == "Critical")] | length' audit.json)
+          else
+            echo "Unexpected JSON structure. Assuming no vulnerabilities."
+            HIGH=0
+          fi
           echo "high_critical=$HIGH" >> $GITHUB_OUTPUT
           echo "Found $HIGH high/critical vulnerabilities"
       - name: Quality Gate - Enforce max high/critical
