@@ -8,7 +8,7 @@ on:
         required: true
       min-coverage:
         type: number
-        default: 80   # este valor ya no se usa aquí, se usa en el quality gate
+        default: 80 
 
 jobs:
   test:
