@@ -17,20 +17,38 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install coverage
-      - name: Download all coverage artifacts
+
+      - name: Download coverage artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: coverage-data-*
           path: all-coverage
           merge-multiple: true
+        continue-on-error: true   # No falla si no hay artefactos
+
       - name: Move .coverage files to root
-        run: find all-coverage -name ".coverage" -exec mv {} . \;
-      - name: Combine and check
         run: |
-          coverage combine
-          TOTAL=$(coverage report | tail -1 | awk '{print $NF}' | sed 's/%//')
-          if (( $(echo "$TOTAL < ${{ inputs.min-coverage }}" | bc -l) )); then
-            echo "❌ Coverage $TOTAL% < ${{ inputs.min-coverage }}%"
+          if [ -d "all-coverage" ]; then
+            find all-coverage -name ".coverage" -exec mv {} . \;
+            find all-coverage -name ".coverage.*" -exec mv {} . \;
+            echo "✅ Coverage files found and moved"
+          else
+            echo "⚠️ No coverage-data artifacts found. Skipping coverage gate."
+            exit 1   # o 0 si quieres que sea opcional
+          fi
+
+      - name: Combine coverage data
+        run: |
+          if ls .coverage* 1> /dev/null 2>&1; then
+            coverage combine
+            TOTAL=$(coverage report | tail -1 | awk '{print $NF}' | sed 's/%//')
+            echo "Total coverage: $TOTAL%"
+            if (( $(echo "$TOTAL < ${{ inputs.min-coverage }}" | bc -l) )); then
+              echo "❌ Coverage $TOTAL% is below ${{ inputs.min-coverage }}%"
+              exit 1
+            fi
+            echo "✅ Coverage gate passed"
+          else
+            echo "❌ No .coverage files found. Cannot compute coverage."
             exit 1
           fi
-          echo "✅ Coverage $TOTAL%"
