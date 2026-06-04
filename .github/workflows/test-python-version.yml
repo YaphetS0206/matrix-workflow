@@ -5,9 +5,10 @@ on:
     inputs:
       python-versions:
         type: string
+        required: true
       min-coverage:
         type: number
-        default: 80
+        default: 80   # este valor ya no se usa aquí, se usa en el quality gate
 
 jobs:
   test:
@@ -28,8 +29,8 @@ jobs:
           pip install --upgrade pip
           pip install pytest pytest-cov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: Run tests with coverage
-        run: PYTHONPATH=. pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
+      - name: Run tests with coverage (generate .coverage, no threshold)
+        run: PYTHONPATH=. pytest --cov=src --cov-report=xml
       - name: Upload .coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
