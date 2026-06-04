@@ -48,7 +48,7 @@ jobs:
           pip install pytest pytest-cov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Run tests with coverage
-        run: pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
+        run: PYTHONPATH=. pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-python-${{ matrix.python-version }}
