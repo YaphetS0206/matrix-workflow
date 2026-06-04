@@ -1,49 +1,37 @@
-name: 🌐 Distributed Validation Layer (Matrix + Security + Quality + Build)
+name: 🌐 Distributed Validation Layer
 
 on:
   workflow_call:
     inputs:
       node-versions:
-        description: 'Versiones de Node.js a probar (JSON array)'
         type: string
         default: '[18, 20, 22]'
       operating-systems:
-        description: 'Sistemas operativos (JSON array)'
         type: string
         default: '["ubuntu-latest", "windows-latest"]'
       working-directory:
-        description: 'Directorio raíz de la aplicación'
         type: string
         default: '.'
       run-lint:
-        description: 'Ejecutar ESLint y Prettier'
         type: boolean
         default: true
       run-audit:
-        description: 'Ejecutar npm audit'
         type: boolean
         default: true
       run-snyk:
-        description: 'Ejecutar Snyk (requiere token)'
         type: boolean
         default: false
       upload-artifact:
-        description: 'Subir artefacto de build'
         type: boolean
         default: true
       artifact-name:
-        description: 'Nombre del artefacto'
         type: string
         default: 'distributed-build'
     secrets:
       SNYK_TOKEN:
-        description: 'Token de Snyk (opcional)'
         required: false
 
 jobs:
-  # ------------------------------------------------------------------
-  # Job principal con matrix: pruebas + lint + audit + build
-  # ------------------------------------------------------------------
   validate:
     name: 🔍 Node ${{ matrix.node }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -51,63 +39,49 @@ jobs:
       matrix:
         node: ${{ fromJson(inputs.node-versions) }}
         os: ${{ fromJson(inputs.operating-systems) }}
-      fail-fast: false   # No cancelar todas las combinaciones si una falla
+      fail-fast: false
 
     steps:
-      # 1. Checkout del código (del repositorio que llama)
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-
-      # 2. Configurar Node.js y caché de npm
-      - name: 🔧 Setup Node.js ${{ matrix.node }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: 'npm'
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-
-      # 3. Instalar dependencias
-      - name: 📦 Install dependencies
-        run: npm ci
+      - run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+      - run: npm test -- --coverage --watchAll=false || npm test
         working-directory: ${{ inputs.working-directory }}
 
-      # 4. Ejecutar pruebas con cobertura (si existe script "test")
-      - name: 🧪 Run tests with coverage
-        run: npm test -- --coverage --watchAll=false || npm test
-        working-directory: ${{ inputs.working-directory }}
-
-      # 5. Linting (opcional, solo Ubuntu y Node 20 para evitar duplicados)
-      - name: ✨ Run linter (ESLint + Prettier)
+      - name: ✨ Linter
         if: inputs.run-lint && matrix.os == 'ubuntu-latest' && matrix.node == 20
         run: |
           npm run lint --if-present
           npm run format:check --if-present
         working-directory: ${{ inputs.working-directory }}
 
-      # 6. npm audit (solo una vez por OS)
       - name: 🔒 npm audit
         if: inputs.run-audit && matrix.os == 'ubuntu-latest' && matrix.node == 20
         run: npm audit --audit-level=moderate
         working-directory: ${{ inputs.working-directory }}
 
-      # 7. Snyk (opcional, solo si hay token y se solicitó)
-      - name: 🛡️ Snyk security scan
-        if: inputs.run-snyk && secrets.SNYK_TOKEN != '' && matrix.os == 'ubuntu-latest' && matrix.node == 20
-        uses: snyk/actions/node@master
+      - name: 🛡️ Snyk scan (if token exists)
+        if: inputs.run-snyk && matrix.os == 'ubuntu-latest' && matrix.node == 20
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            npx snyk test --severity-threshold=high --all-projects
+          else
+            echo "SNYK_TOKEN not provided, skipping Snyk"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high --all-projects
-          command: test
-          working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ inputs.working-directory }}
 
-      # 8. Build (empaquetado, si existe script "build")
-      - name: 📦 Build application
+      - name: 📦 Build
         run: npm run build --if-present
         working-directory: ${{ inputs.working-directory }}
 
-      # 9. Subir artefacto (solo una combinación para ahorrar recursos)
-      - name: 📤 Upload build artifact
+      - name: 📤 Upload artifact
         if: inputs.upload-artifact && matrix.os == 'ubuntu-latest' && matrix.node == 20
         uses: actions/upload-artifact@v4
         with:
