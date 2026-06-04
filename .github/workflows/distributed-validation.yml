@@ -37,8 +37,8 @@ jobs:
   audit:
     uses: ./.github/workflows/security.yml
     with:
-      max-high-vulns: ${{ inputs.max-high-vulns }}
-      run-trivy: ${{ inputs.run-trivy }}
+      max-high-vulns: 0
+      run-trivy: true
 
   sast:
     uses: ./.github/workflows/sast.yml
