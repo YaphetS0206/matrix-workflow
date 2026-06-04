@@ -102,6 +102,7 @@ jobs:
   # ---------- 3. Distributed Security Tools (sin matrix, cada uno su job) ----------
   security-snyk:
     name: 🔒 Snyk scan
+    
     if: secrets.SNYK_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
