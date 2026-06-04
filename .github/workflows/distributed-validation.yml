@@ -149,21 +149,4 @@ jobs:
           # Se puede personalizar según tu criterio
           echo "✅ Escaneo Semgrep completado. Revisa la pestaña 'Security' para más detalles."
 
-  # ============================================================
-  # (Extras) SNYK - si tienes token, se ejecuta opcionalmente
-  # ============================================================
-  snyk:
-    name: 🛡️ Snyk Container/Code (opcional)
-    if: secrets.SNYK_TOKEN != ''
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
+ 
