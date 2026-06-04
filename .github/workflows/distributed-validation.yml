@@ -37,36 +37,6 @@ jobs:
         node: ${{ fromJson(inputs.node-versions) }}
         db: ${{ fromJson(inputs.databases) }}
       fail-fast: false
-    services:
-      postgres:
-        image: postgres:15
-        if: matrix.db == 'postgres'
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mysql:
-        image: mysql:8
-        if: matrix.db == 'mysql'
-        env:
-          MYSQL_ROOT_PASSWORD: rootpass
-          MYSQL_DATABASE: testdb
-          MYSQL_USER: testuser
-          MYSQL_PASSWORD: testpass
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -74,16 +44,37 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: 'npm'
       - run: npm ci
+
+      # Iniciar base de datos según el valor de matrix.db
+      - name: Start PostgreSQL container
+        if: matrix.db == 'postgres'
+        run: |
+          docker run -d --name postgres -e POSTGRES_USER=testuser -e POSTGRES_PASSWORD=testpass -e POSTGRES_DB=testdb -p 5432:5432 postgres:15
+          for i in {1..30}; do docker exec postgres pg_isready && break || sleep 1; done
+
+      - name: Start MySQL container
+        if: matrix.db == 'mysql'
+        run: |
+          docker run -d --name mysql -e MYSQL_ROOT_PASSWORD=rootpass -e MYSQL_DATABASE=testdb -e MYSQL_USER=testuser -e MYSQL_PASSWORD=testpass -p 3306:3306 mysql:8
+          for i in {1..30}; do docker exec mysql mysqladmin ping -h localhost --silent && break || sleep 1; done
+
       - name: Run integration tests with ${{ matrix.db }}
         run: npm run test:integration -- --db=${{ matrix.db }}
         env:
+          DB_TYPE: ${{ matrix.db }}
           DB_HOST: localhost
           DB_PORT: ${{ matrix.db == 'postgres' && 5432 || matrix.db == 'mysql' && 3306 || '' }}
           DB_USER: testuser
           DB_PASSWORD: testpass
           DB_NAME: testdb
 
-  # ---------- 2. Multi-Architecture Docker Builds (matrix arquitecturas) ----------
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker stop postgres mysql || true
+          docker rm postgres mysql || true
+
+  # ---------- 2. Multi-Architecture Docker Builds ----------
   docker-build:
     name: 🐳 Docker build for ${{ matrix.arch }}
     if: inputs.run-docker-build
@@ -107,9 +98,8 @@ jobs:
       - name: Test image architecture
         run: |
           docker run --rm app-b:test-${{ matrix.arch }} node -p "process.arch"
-          # Verifica que la arquitectura coincida
 
-  # ---------- 3. Distributed Security Tools (cada herramienta en su job) ----------
+  # ---------- 3. Distributed Security Tools (sin matrix, cada uno su job) ----------
   security-snyk:
     name: 🔒 Snyk scan
     if: secrets.SNYK_TOKEN != ''
