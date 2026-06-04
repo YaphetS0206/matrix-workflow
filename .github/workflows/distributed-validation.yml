@@ -27,7 +27,7 @@ on:
         required: false
 
 jobs:
-  # ---------- 1. Integration Tests Matrix (Node × Database) ----------
+  # ---------- 1. Integration Tests Matrix ----------
   integration-tests:
     name: 🧪 Test Node ${{ matrix.node }} / DB ${{ matrix.db }}
     if: inputs.run-integration-tests
@@ -45,20 +45,19 @@ jobs:
           cache: 'npm'
       - run: npm ci
 
-      # Iniciar base de datos según el valor de matrix.db
-      - name: Start PostgreSQL container
+      - name: Start PostgreSQL
         if: matrix.db == 'postgres'
         run: |
           docker run -d --name postgres -e POSTGRES_USER=testuser -e POSTGRES_PASSWORD=testpass -e POSTGRES_DB=testdb -p 5432:5432 postgres:15
           for i in {1..30}; do docker exec postgres pg_isready && break || sleep 1; done
 
-      - name: Start MySQL container
+      - name: Start MySQL
         if: matrix.db == 'mysql'
         run: |
           docker run -d --name mysql -e MYSQL_ROOT_PASSWORD=rootpass -e MYSQL_DATABASE=testdb -e MYSQL_USER=testuser -e MYSQL_PASSWORD=testpass -p 3306:3306 mysql:8
           for i in {1..30}; do docker exec mysql mysqladmin ping -h localhost --silent && break || sleep 1; done
 
-      - name: Run integration tests with ${{ matrix.db }}
+      - name: Run integration tests
         run: npm run test:integration -- --db=${{ matrix.db }}
         env:
           DB_TYPE: ${{ matrix.db }}
@@ -68,11 +67,9 @@ jobs:
           DB_PASSWORD: testpass
           DB_NAME: testdb
 
-      - name: Cleanup containers
+      - name: Cleanup
         if: always()
-        run: |
-          docker stop postgres mysql || true
-          docker rm postgres mysql || true
+        run: docker stop postgres mysql || true; docker rm postgres mysql || true
 
   # ---------- 2. Multi-Architecture Docker Builds ----------
   docker-build:
@@ -86,39 +83,53 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Build Docker image for ${{ matrix.arch }}
+      - name: Build image
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: ${{ matrix.arch }}
           load: true
-          tags: app-b:test-${{ matrix.arch }}
+          tags: app-b:${{ matrix.arch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Test image architecture
-        run: |
-          docker run --rm app-b:test-${{ matrix.arch }} node -p "process.arch"
+      - name: Verify architecture
+        run: docker run --rm app-b:${{ matrix.arch }} node -p "process.arch"
 
-  # ---------- 3. Distributed Security Tools (sin matrix, cada uno su job) ----------
+  # ---------- 3. Security Scans (cada uno en su job, sin if a nivel job) ----------
   security-snyk:
     name: 🔒 Snyk scan
-    
-    if: secrets.SNYK_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check if secret exists
+        id: check
+        run: |
+          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "SNYK_TOKEN not provided, skipping Snyk scan"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Run Snyk
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/checkout@v4
+      - name: Setup Node
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - uses: snyk/actions/node@master
+      - name: Install deps
+        if: steps.check.outputs.skip == 'false'
+        run: npm ci
+      - name: Snyk scan
+        if: steps.check.outputs.skip == 'false'
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
 
   security-trivy:
-    name: 🛡️ Trivy filesystem scan
+    name: 🛡️ Trivy fs scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +140,7 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-      - name: Upload Trivy results to GitHub Security tab
+      - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
