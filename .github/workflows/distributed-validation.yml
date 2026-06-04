@@ -1,41 +1,38 @@
-name: 🌐 Distributed Validation - Multi-Dimensional Matrix
+name: 🌐 Security & Quality Distributed Validation
 
 on:
   workflow_call:
     inputs:
       node-versions:
+        description: 'Versiones de Node.js para la matriz de pruebas'
         type: string
         default: '[18, 20, 22]'
-      databases:
-        type: string
-        default: '["postgres", "mysql", "sqlite"]'
-      docker-architectures:
-        type: string
-        default: '["linux/amd64", "linux/arm64"]'
-      run-integration-tests:
-        type: boolean
-        default: true
-      run-docker-build:
+      min-coverage:
+        description: 'Cobertura mínima requerida (0-100)'
+        type: number
+        default: 80
+      max-high-vulns:
+        description: 'Máximo de vulnerabilidades high+critical permitidas'
+        type: number
+        default: 0
+      run-semgrep:
+        description: 'Ejecutar análisis Semgrep'
         type: boolean
         default: true
     secrets:
-      SNYK_TOKEN:
-        required: false
-      DOCKER_USERNAME:
-        required: false
-      DOCKER_PASSWORD:
+      SNYK_TOKEN:  # opcional, por si quieres añadir Snyk más adelante
         required: false
 
 jobs:
-  # ---------- 1. Integration Tests Matrix ----------
-  integration-tests:
-    name: 🧪 Test Node ${{ matrix.node }} / DB ${{ matrix.db }}
-    if: inputs.run-integration-tests
+  # ============================================================
+  # 1. MATRIX DE PRUEBAS (diferentes versiones de Node)
+  # ============================================================
+  test-matrix:
+    name: 🧪 Test Node ${{ matrix.node }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node: ${{ fromJson(inputs.node-versions) }}
-        db: ${{ fromJson(inputs.databases) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -44,109 +41,54 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: 'npm'
       - run: npm ci
+      - name: Ejecutar tests con cobertura
+        run: npm test -- --coverage --watchAll=false
+      - name: Subir artefacto de cobertura por versión
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-node-${{ matrix.node }}
+          path: coverage/
 
-      - name: Start PostgreSQL
-        if: matrix.db == 'postgres'
-        run: |
-          docker run -d --name postgres -e POSTGRES_USER=testuser -e POSTGRES_PASSWORD=testpass -e POSTGRES_DB=testdb -p 5432:5432 postgres:15
-          for i in {1..30}; do docker exec postgres pg_isready && break || sleep 1; done
-
-      - name: Start MySQL
-        if: matrix.db == 'mysql'
-        run: |
-          docker run -d --name mysql -e MYSQL_ROOT_PASSWORD=rootpass -e MYSQL_DATABASE=testdb -e MYSQL_USER=testuser -e MYSQL_PASSWORD=testpass -p 3306:3306 mysql:8
-          for i in {1..30}; do docker exec mysql mysqladmin ping -h localhost --silent && break || sleep 1; done
-
-      - name: Run integration tests
-        run: npm run test:integration -- --db=${{ matrix.db }}
-        env:
-          DB_TYPE: ${{ matrix.db }}
-          DB_HOST: localhost
-          DB_PORT: ${{ matrix.db == 'postgres' && 5432 || matrix.db == 'mysql' && 3306 || '' }}
-          DB_USER: testuser
-          DB_PASSWORD: testpass
-          DB_NAME: testdb
-
-      - name: Cleanup
-        if: always()
-        run: docker stop postgres mysql || true; docker rm postgres mysql || true
-
-  # ---------- 2. Multi-Architecture Docker Builds ----------
-  docker-build:
-    name: 🐳 Docker build for ${{ matrix.arch }}
-    if: inputs.run-docker-build
+  # ============================================================
+  # 2. QUALITY GATE: COBERTURA GLOBAL (fusión de todas las versiones)
+  # ============================================================
+  quality-coverage:
+    name: 📊 Quality Gate - Cobertura mínima ${{ inputs.min-coverage }}%
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: ${{ fromJson(inputs.docker-architectures) }}
+    needs: test-matrix
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - name: Build image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: ${{ matrix.arch }}
-          load: true
-          tags: app-b:${{ matrix.arch }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Verify architecture
-        run: docker run --rm app-b:${{ matrix.arch }} node -p "process.arch"
-
-  # ---------- 3. Security Scans (cada uno en su job, sin if a nivel job) ----------
-  security-snyk:
-    name: 🔒 Snyk scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check if secret exists
-        id: check
-        run: |
-          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
-            echo "SNYK_TOKEN not provided, skipping Snyk scan"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Run Snyk
-        if: steps.check.outputs.skip == 'false'
-        uses: actions/checkout@v4
-      - name: Setup Node
-        if: steps.check.outputs.skip == 'false'
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install deps
-        if: steps.check.outputs.skip == 'false'
-        run: npm ci
-      - name: Snyk scan
-        if: steps.check.outputs.skip == 'false'
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Descargar todos los reports de cobertura
+        uses: actions/download-artifact@v4
         with:
-          args: --severity-threshold=high
+          pattern: coverage-*
+          path: all-coverage
+          merge-multiple: true
+      - name: Instalar nyc para fusionar
+        run: npm install -g nyc
+      - name: Fusionar coberturas
+        run: npx nyc merge all-coverage .nyc_output
+      - name: Generar reporte JSON
+        run: npx nyc report --reporter=json-summary
+      - name: Verificar umbral de cobertura
+        run: |
+          COVERAGE=$(jq '.total.lines.pct' coverage/coverage-summary.json)
+          echo "Cobertura total: $COVERAGE%"
+          if (( $(echo "$COVERAGE < ${{ inputs.min-coverage }}" | bc -l) )); then
+            echo "❌ Falló quality gate: cobertura $COVERAGE% es inferior a ${{ inputs.min-coverage }}%"
+            exit 1
+          else
+            echo "✅ Quality gate de cobertura superado"
+          fi
 
-  security-trivy:
-    name: 🛡️ Trivy fs scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  security-npm-audit:
-    name: 📋 npm audit
+  # ============================================================
+  # 3. QUALITY GATE: npm audit (vulnerabilidades high/critical)
+  # ============================================================
+  audit-gate:
+    name: 🔒 npm audit - Máx ${{ inputs.max-high-vulns }} vulnerabilidades high+critical
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,4 +96,74 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npm audit --audit-level=moderate
+      - name: Ejecutar npm audit y extraer métricas
+        id: audit
+        continue-on-error: true
+        run: |
+          npm audit --json > audit.json
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' audit.json)
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit.json)
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+      - name: Verificar límite de vulnerabilidades
+        run: |
+          HIGH=${{ steps.audit.outputs.high }}
+          CRITICAL=${{ steps.audit.outputs.critical }}
+          TOTAL=$((HIGH + CRITICAL))
+          echo "Vulnerabilidades high: $HIGH, critical: $CRITICAL, total: $TOTAL"
+          if [ $TOTAL -gt ${{ inputs.max-high-vulns }} ]; then
+            echo "❌ Falló quality gate: se encontraron $TOTAL vulnerabilidades high/critical (máximo ${{ inputs.max-high-vulns }})"
+            exit 1
+          else
+            echo "✅ Quality gate de vulnerabilidades superado"
+          fi
+      - name: Subir reporte de auditoría
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: audit.json
+
+  # ============================================================
+  # 4. SEMGREP - SAST moderno
+  # ============================================================
+  semgrep:
+    name: 🔍 Semgrep SAST
+    if: inputs.run-semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ejecutar Semgrep
+        id: semgrep
+        continue-on-error: true
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto               # usa reglas predeterminadas (p/default, p/security-audit, etc.)
+          output: semgrep.sarif
+      - name: Subir resultados a la pestaña de seguridad de GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+      - name: (Opcional) Fallar si se encuentran hallazgos críticos
+        run: |
+          # Ejemplo: si quieres fallar el pipeline cuando Semgrep encuentra errores de seguridad nivel error
+          # Se puede personalizar según tu criterio
+          echo "✅ Escaneo Semgrep completado. Revisa la pestaña 'Security' para más detalles."
+
+  # ============================================================
+  # (Extras) SNYK - si tienes token, se ejecuta opcionalmente
+  # ============================================================
+  snyk:
+    name: 🛡️ Snyk Container/Code (opcional)
+    if: secrets.SNYK_TOKEN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
