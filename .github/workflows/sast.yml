@@ -1,0 +1,48 @@
+name: 🔍 SAST (Semgrep + Bandit)
+
+on:
+  workflow_call:
+    inputs:
+      run-semgrep:
+        type: boolean
+        default: true
+      run-bandit:
+        type: boolean
+        default: true
+
+jobs:
+  semgrep:
+    if: inputs.run-semgrep
+    name: Semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+          output: semgrep.sarif
+      - name: Upload SARIF
+        if: hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+
+  bandit:
+    if: inputs.run-bandit
+    name: Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install bandit
+      - run: bandit -r src -f json -o bandit.json
+      - name: Check high severity
+        run: |
+          HIGH=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit.json)
+          if [ $HIGH -gt 0 ]; then
+            echo "❌ Bandit found $HIGH high-severity issues"
+            exit 1
+          fi
+          echo "✅ Bandit passed"

@@ -1,0 +1,42 @@
+name: 🧪 Test Matrix
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        type: string
+        default: '[3.11, 3.12]'
+      min-coverage:
+        type: number
+        default: 80
+    outputs:
+      coverage-files:
+        description: "Artefactos de cobertura generados"
+        value: ${{ jobs.test.outputs.coverage-files }}
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ${{ fromJson(inputs.python-versions) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-cov
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Run tests with coverage
+        run: pytest --cov=src --cov-report=xml --cov-fail-under=${{ inputs.min-coverage }}
+      - name: Upload .coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-${{ matrix.python-version }}
+          path: .coverage

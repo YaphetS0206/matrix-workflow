@@ -1,40 +1,36 @@
-name: ✨ Reusable - Code Quality
+name: 📊 Quality Gate - Coverage
 
 on:
   workflow_call:
     inputs:
-      working-directory:
-        type: string
-        default: '.'
-      node-version:
-        type: string
-        default: '20'
+      min-coverage:
+        type: number
+        default: 80
 
 jobs:
-  lint:
-    name: 🧹 ESLint
+  coverage:
+    name: Validate coverage >= ${{ inputs.min-coverage }}%
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: ${{ inputs.node-version }}
-          cache: 'npm'
-          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-      - run: npm ci
-        working-directory: ${{ inputs.working-directory }}
-      - run: npm run lint --if-present
-        working-directory: ${{ inputs.working-directory }}
-
-  prettier:
-    name: 💄 Prettier check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+          python-version: '3.11'
+      - run: pip install coverage
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
         with:
-          node-version: ${{ inputs.node-version }}
-      - run: npm ci
-        working-directory: ${{ inputs.working-directory }}
-      - run: npm run format:check --if-present
-        working-directory: ${{ inputs.working-directory }}
+          pattern: coverage-data-*
+          path: all-coverage
+          merge-multiple: true
+      - name: Move .coverage files to root
+        run: find all-coverage -name ".coverage" -exec mv {} . \;
+      - name: Combine and check
+        run: |
+          coverage combine
+          TOTAL=$(coverage report | tail -1 | awk '{print $NF}' | sed 's/%//')
+          if (( $(echo "$TOTAL < ${{ inputs.min-coverage }}" | bc -l) )); then
+            echo "❌ Coverage $TOTAL% < ${{ inputs.min-coverage }}%"
+            exit 1
+          fi
+          echo "✅ Coverage $TOTAL%"
